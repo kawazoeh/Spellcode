@@ -2,7 +2,7 @@
   <img src="assets/spellcode01.png" alt="The Spellcode app icon: a four-pointed star with bracket-like marks above, below and on either side, drawn as faint outlines on a white square." width="96">
 </p>
 
-# Spellcode
+<h1 align="center">Spellcode</h1>
 
 A black-and-white, GPU-rendered tabbed terminal for macOS and Windows, written
 in Rust with [GPUI](https://gpui.rs).

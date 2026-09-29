@@ -2,7 +2,7 @@
   <img src="assets/spellcode01.png" alt="L'icône de l'application Spellcode : une étoile à quatre branches encadrée de marques en forme de crochets au-dessus, en dessous et de chaque côté, dessinée en traits pâles sur un carré blanc." width="96">
 </p>
 
-# Spellcode
+<h1 align="center">Spellcode</h1>
 
 Un terminal à onglets en noir et blanc, rendu par le GPU, pour macOS et Windows,
 écrit en Rust avec [GPUI](https://gpui.rs).

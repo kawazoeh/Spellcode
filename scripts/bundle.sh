@@ -58,6 +58,15 @@ cat > "$app/Contents/Info.plist" <<'PLIST'
 </plist>
 PLIST
 
+# --- signature ----------------------------------------------------------
+# cargo leaves the bare binary with the linker's ad-hoc signature only, which
+# is not a bundle signature: the Finder then reports the app as damaged
+# ("code has no resources but signature indicates they must be present").
+# Re-sign the assembled bundle so the resources (Info.plist, .icns) are sealed
+# into the signature. This must happen last, after every file is in place.
+codesign --force --deep --sign - "$app"
+codesign --verify --deep --strict --verbose=2 "$app"
+
 # Let Launch Services forget any earlier registration of the same path.
 touch "$app"
 echo "$app"

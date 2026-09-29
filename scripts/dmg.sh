@@ -14,6 +14,11 @@ volname="${VOLNAME:-Spellcode}"
 
 [[ -d "$app" ]] || { echo "app not found: $app" >&2; exit 1; }
 
+# Only ship a bundle whose resources are sealed. An unsigned bundle (the bare
+# linker ad-hoc signature) makes the Finder call the app "damaged", so refuse
+# to build an image around it rather than publish a broken .dmg.
+codesign --verify --deep --strict --verbose=2 "$app"
+
 staging="$(mktemp -d)"
 trap 'rm -rf "$staging"' EXIT
 

@@ -51,10 +51,20 @@ jobs:
       # Two artefacts per architecture: the .app zip (kept as a lightweight
       # fallback) and a drag-and-drop .dmg. scripts/dmg.sh uses hdiutil, which
       # ships with macOS, so no third-party action has to be pinned.
-      - name: Package (macOS)
+      - name: Assemble the bundle (macOS)
+        if: matrix.kind == 'macos'
+        run: bash scripts/bundle.sh
+
+      # Anti-regression gate: an unsigned bundle (the linker's ad-hoc signature
+      # only) is what makes the Finder report the app as damaged. Fail the
+      # release here rather than ship a broken .dmg again.
+      - name: Verify the bundle signature (macOS)
+        if: matrix.kind == 'macos'
+        run: codesign --verify --deep --strict --verbose=2 target/Spellcode.app
+
+      - name: Create archive and disk image (macOS)
         if: matrix.kind == 'macos'
         run: |
-          bash scripts/bundle.sh
           ditto -c -k --sequesterRsrc --keepParent \
             target/Spellcode.app "${{ matrix.archive }}"
           bash scripts/dmg.sh target/Spellcode.app "${{ matrix.disk }}"

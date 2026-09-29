@@ -1,0 +1,21 @@
+[package]
+name = "spellcode-app"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+spellcode-term = { path = "../spellcode-term" }
+alacritty_terminal.workspace = true
+anyhow.workspace = true
+gpui.workspace = true
+serde.workspace = true
+toml.workspace = true
+
+[features]
+# The Blade backend compiles its shaders through naga, so it does not need
+# the Xcode `metal` toolchain the default macOS renderer requires.
+default = ["macos-blade"]
+macos-blade = ["gpui/macos-blade"]

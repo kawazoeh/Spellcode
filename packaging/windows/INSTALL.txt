@@ -1,0 +1,36 @@
+Spellcode — Windows (x86_64)
+=============================
+
+Contents
+--------
+  spellcode-app.exe   the terminal
+  icon.png            application icon (not embedded in the .exe)
+  README.txt          this file
+
+Requirements
+------------
+  - Windows 10 version 1809 (build 17763) or newer, 64-bit.
+    The terminal relies on ConPTY, which appeared in that release.
+  - A GPU exposing Direct3D 11 (any DirectX 11-class card).
+    Spellcode draws through D3D11 + DirectComposition; there is no
+    software fallback.
+
+Install
+-------
+  1. Unzip this folder anywhere (for example C:\Program Files\Spellcode).
+  2. Run spellcode-app.exe.
+  3. No installer is provided yet, and the .exe is not code-signed, so
+     Windows SmartScreen may warn on first launch.
+
+Configuration
+-------------
+  The first run writes a starter config to
+  %USERPROFILE%\.config\spellcode\config.toml
+  Edit it to change the shell, fonts and the sidebar entries.
+
+Known limitations
+-----------------
+  - The application icon is shipped as a separate PNG file; it is not
+    embedded in spellcode-app.exe.
+  - The window requests a blurred/acrylic background; whether Windows
+    honours it is not verified.

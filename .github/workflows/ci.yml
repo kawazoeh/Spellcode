@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  fmt:
+    name: rustfmt
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --all --check
+
+  check:
+    name: clippy + tests + build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # macOS uses the default feature `macos-blade`: gpui compiles its
+          # shaders through naga, so the Xcode `metal` toolchain is not needed.
+          - os: macos-15
+            features: ""
+          # Linux has no `macos-blade`; dropping it leaves gpui's own defaults
+          # (wayland + x11) in place, which are the Linux renderers.
+          - os: ubuntu-latest
+            features: "--no-default-features"
+    steps:
+      - uses: actions/checkout@v6
+
+      # GPUI links libxkbcommon and uses Wayland/X11 at runtime; the runners
+      # ship the libraries but not the -dev headers.
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential pkg-config \
+            libssl-dev libfontconfig-dev \
+            libwayland-dev libxkbcommon-dev libxkbcommon-x11-dev \
+            libx11-xcb-dev libxcb1-dev libxcb-render0-dev \
+            libxcb-shape0-dev libxcb-xfixes0-dev \
+            libasound2-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: clippy
+        run: cargo clippy --workspace --all-targets ${{ matrix.features }} -- -D warnings
+
+      - name: tests
+        run: cargo test --workspace ${{ matrix.features }}
+
+      - name: release build
+        run: cargo build --release ${{ matrix.features }}

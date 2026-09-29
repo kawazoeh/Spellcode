@@ -1,0 +1,120 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # macOS: build natively (no --target) so bundle.sh finds the binary at
+          # the expected target/release/ path. macos-15 is arm64, macos-15-intel
+          # is x86_64 (macos-13, the old Intel image, was retired in Dec 2025).
+          - os: macos-15
+            target: arm64
+            kind: macos
+            archive: Spellcode-macos-arm64.zip
+          - os: macos-15-intel
+            target: x86_64
+            kind: macos
+            archive: Spellcode-macos-x86_64.zip
+          - os: windows-latest
+            target: x86_64
+            kind: windows
+            archive: Spellcode-windows-x86_64.zip
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      # macOS ------------------------------------------------------------------
+      - name: Build (macOS)
+        if: matrix.kind == 'macos'
+        run: cargo build --release
+
+      - name: Package (macOS)
+        if: matrix.kind == 'macos'
+        run: |
+          bash scripts/bundle.sh
+          ditto -c -k --sequesterRsrc --keepParent \
+            target/Spellcode.app "${{ matrix.archive }}"
+          unzip -l "${{ matrix.archive }}"
+
+      # Windows ----------------------------------------------------------------
+      # gpui compiles its HLSL shaders with fxc.exe at build time. The
+      # windows-latest image ships the Windows SDK, but the version directory
+      # moves; locate the newest fxc.exe and point gpui at it.
+      - name: Locate fxc.exe and export GPUI_FXC_PATH
+        if: matrix.kind == 'windows'
+        shell: pwsh
+        run: |
+          $fxc = Get-ChildItem -Path 'C:\Program Files (x86)\Windows Kits\10\bin\*\x64\fxc.exe' `
+                   -ErrorAction SilentlyContinue |
+                 Sort-Object FullName -Descending | Select-Object -First 1
+          if (-not $fxc) {
+            throw 'fxc.exe not found: the Windows SDK (10.0.26100) is required to build gpui.'
+          }
+          "GPUI_FXC_PATH=$($fxc.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          Write-Host "GPUI_FXC_PATH=$($fxc.FullName)"
+
+      - name: Build (Windows)
+        if: matrix.kind == 'windows'
+        shell: pwsh
+        # `macos-blade` is a macOS-only renderer feature: drop it on Windows and
+        # gpui uses its DirectX 11 backend (its own default features stay on).
+        run: cargo build --release --no-default-features
+
+      - name: Package (Windows)
+        if: matrix.kind == 'windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist\windows | Out-Null
+          Copy-Item target\release\spellcode-app.exe dist\windows\
+          Copy-Item assets\spellcode01.png          dist\windows\icon.png
+          Copy-Item packaging\windows\INSTALL.txt   dist\windows\README.txt
+          Compress-Archive -Path dist\windows\* -DestinationPath "${{ matrix.archive }}" -Force
+
+      - uses: actions/upload-artifact@v5
+        with:
+          name: ${{ matrix.archive }}
+          path: ${{ matrix.archive }}
+          if-no-files-found: error
+
+  release:
+    name: publish release
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v5
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: List assets
+        run: ls -lR dist
+
+      # softprops/action-gh-release is used instead of `gh release` because it
+      # creates the release and uploads every globbed asset in one declarative
+      # step, with no token plumbing on our side.
+      - uses: softprops/action-gh-release@v3
+        with:
+          files: dist/*.zip
+          draft: false
+          generate_release_notes: true

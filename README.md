@@ -7,6 +7,8 @@ in Rust with [GPUI](https://gpui.rs).
 [![License: MIT](https://img.shields.io/github/license/kawazoeh/Spellcode)](https://github.com/kawazoeh/Spellcode/blob/main/LICENSE)
 [![Latest release](https://img.shields.io/github/v/release/kawazoeh/Spellcode)](https://github.com/kawazoeh/Spellcode/releases)
 
+**English** · [Français](README.fr.md)
+
 ## Why it exists
 
 A terminal is idle most of the time. Spellcode only repaints a pane when its PTY
@@ -74,7 +76,7 @@ scripts/dmg.sh      # Spellcode.dmg around that bundle
 `scripts/bundle.sh` takes an optional icon path and defaults to
 `assets/spellcode01.png`:
 
-![The Spellcode app icon: a four-pointed star with bracket-like marks above, below and on either side, drawn as faint outlines on a white square.](assets/spellcode01.png)
+<img src="assets/spellcode01.png" alt="The Spellcode app icon: a four-pointed star with bracket-like marks above, below and on either side, drawn as faint outlines on a white square." width="96">
 
 On Windows, drop the macOS-only renderer feature and build the workspace:
 

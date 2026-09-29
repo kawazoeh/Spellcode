@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/spellcode01.png" alt="L'icône de l'application Spellcode : une étoile à quatre branches encadrée de marques en forme de crochets au-dessus, en dessous et de chaque côté, dessinée en traits pâles sur un carré blanc." width="96">
+</p>
+
 # Spellcode
 
 Un terminal à onglets en noir et blanc, rendu par le GPU, pour macOS et Windows,
@@ -80,9 +84,7 @@ scripts/dmg.sh      # Spellcode.dmg autour de ce bundle
 ```
 
 `scripts/bundle.sh` accepte un chemin d'icône en option et utilise par défaut
-`assets/spellcode01.png` :
-
-<img src="assets/spellcode01.png" alt="L'icône de l'application Spellcode : une étoile à quatre branches encadrée de marques en forme de crochets au-dessus, en dessous et de chaque côté, dessinée en traits pâles sur un carré blanc." width="96">
+`assets/spellcode01.png`.
 
 Sur Windows, retirez la fonctionnalité de rendu propre à macOS et compilez le
 workspace :

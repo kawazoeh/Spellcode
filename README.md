@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/spellcode01.png" alt="The Spellcode app icon: a four-pointed star with bracket-like marks above, below and on either side, drawn as faint outlines on a white square." width="96">
+</p>
+
 # Spellcode
 
 A black-and-white, GPU-rendered tabbed terminal for macOS and Windows, written
@@ -74,9 +78,7 @@ scripts/dmg.sh      # Spellcode.dmg around that bundle
 ```
 
 `scripts/bundle.sh` takes an optional icon path and defaults to
-`assets/spellcode01.png`:
-
-<img src="assets/spellcode01.png" alt="The Spellcode app icon: a four-pointed star with bracket-like marks above, below and on either side, drawn as faint outlines on a white square." width="96">
+`assets/spellcode01.png`.
 
 On Windows, drop the macOS-only renderer feature and build the workspace:
 

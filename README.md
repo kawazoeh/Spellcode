@@ -7,7 +7,6 @@ A black-and-white, GPU-rendered tabbed terminal for macOS, written in Rust with
 [![License: MIT](https://img.shields.io/github/license/kawazoeh/Spellcode)](https://github.com/kawazoeh/Spellcode/blob/main/LICENSE)
 [![Latest release](https://img.shields.io/github/v/release/kawazoeh/Spellcode)](https://github.com/kawazoeh/Spellcode/releases)
 
-![A Spellcode window on macOS: the translucent tab bar doubles as the title bar, showing the Spellcode wordmark, the new-tab button and a single Shell tab with a bolt icon above a terminal at a shell prompt.](docs/screenshot.png)
 
 ## Why it exists
 

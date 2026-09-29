@@ -24,10 +24,12 @@ jobs:
             target: arm64
             kind: macos
             archive: Spellcode-macos-arm64.zip
+            disk: Spellcode-macos-arm64.dmg
           - os: macos-15-intel
             target: x86_64
             kind: macos
             archive: Spellcode-macos-x86_64.zip
+            disk: Spellcode-macos-x86_64.dmg
           - os: windows-latest
             target: x86_64
             kind: windows
@@ -46,13 +48,18 @@ jobs:
         if: matrix.kind == 'macos'
         run: cargo build --release
 
+      # Two artefacts per architecture: the .app zip (kept as a lightweight
+      # fallback) and a drag-and-drop .dmg. scripts/dmg.sh uses hdiutil, which
+      # ships with macOS, so no third-party action has to be pinned.
       - name: Package (macOS)
         if: matrix.kind == 'macos'
         run: |
           bash scripts/bundle.sh
           ditto -c -k --sequesterRsrc --keepParent \
             target/Spellcode.app "${{ matrix.archive }}"
+          bash scripts/dmg.sh target/Spellcode.app "${{ matrix.disk }}"
           unzip -l "${{ matrix.archive }}"
+          hdiutil verify "${{ matrix.disk }}"
 
       # Windows ----------------------------------------------------------------
       # gpui compiles its HLSL shaders with fxc.exe at build time. The
@@ -78,7 +85,9 @@ jobs:
         # gpui uses its DirectX 11 backend (its own default features stay on).
         run: cargo build --release --no-default-features
 
-      - name: Package (Windows)
+      # The portable zip is always produced, even if the installer job below
+      # fails: the installer must not be a single point of failure for a release.
+      - name: Package (Windows, portable zip)
         if: matrix.kind == 'windows'
         shell: pwsh
         run: |
@@ -88,15 +97,80 @@ jobs:
           Copy-Item packaging\windows\INSTALL.txt   dist\windows\README.txt
           Compress-Archive -Path dist\windows\* -DestinationPath "${{ matrix.archive }}" -Force
 
-      - uses: actions/upload-artifact@v5
+      - name: Upload archive (.zip)
+        uses: actions/upload-artifact@v5
         with:
           name: ${{ matrix.archive }}
           path: ${{ matrix.archive }}
           if-no-files-found: error
 
+      - name: Upload disk image (.dmg)
+        if: matrix.kind == 'macos'
+        uses: actions/upload-artifact@v5
+        with:
+          name: ${{ matrix.disk }}
+          path: ${{ matrix.disk }}
+          if-no-files-found: error
+
+  # Separate job on purpose: a NSIS failure turns this job red but leaves the
+  # portable zip above publishable. The installer is a bonus, not the lifeline.
+  installer-windows:
+    name: installer (Windows .exe)
+    needs: build
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/download-artifact@v5
+        with:
+          name: Spellcode-windows-x86_64.zip
+          path: winzip
+
+      - name: Extract the portable build
+        shell: pwsh
+        run: Expand-Archive -Path winzip\Spellcode-windows-x86_64.zip -DestinationPath winbuild -Force
+
+      # The Windows runners have no sips/iconutil. Pillow builds a real
+      # multi-size .ico from the PNG, and we assert the sizes are all present.
+      - name: Build the application icon (.ico)
+        shell: pwsh
+        run: |
+          python -m pip install --quiet --disable-pip-version-check pillow
+          python -c "from PIL import Image; im = Image.open('assets/spellcode01.png').convert('RGBA'); im.save('packaging/windows/spellcode.ico', sizes=[(16,16),(32,32),(48,48),(64,64),(128,128),(256,256)])"
+          python -c "from PIL import Image; s = sorted(Image.open('packaging/windows/spellcode.ico').info.get('sizes', [])); print('ico sizes:', s); assert len(s) >= 6, s"
+
+      - name: Install NSIS
+        shell: pwsh
+        run: choco install nsis --no-progress -y
+
+      - name: Compile the installer
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}" -replace '^v', ''
+          $makensis = 'C:\Program Files (x86)\NSIS\makensis.exe'
+          if (-not (Test-Path $makensis)) { throw "makensis.exe not found at $makensis" }
+          & $makensis /V2 `
+            "/DVERSION=$version" `
+            "/DSRCEXE=$PWD\winbuild\spellcode-app.exe" `
+            "/DSRCICON=$PWD\packaging\windows\spellcode.ico" `
+            "/DOUT=$PWD\Setup-Spellcode-$version-x64.exe" `
+            "$PWD\packaging\windows\spellcode.nsi"
+          if ($LASTEXITCODE -ne 0) { throw "makensis failed with exit code $LASTEXITCODE" }
+          Get-Item "Setup-Spellcode-$version-x64.exe" | Format-List Name, Length
+
+      - uses: actions/upload-artifact@v5
+        with:
+          name: Setup-Spellcode-${{ github.ref_name }}-x64.exe
+          path: Setup-Spellcode-*-x64.exe
+          if-no-files-found: error
+
   release:
     name: publish release
-    needs: build
+    # Runs as long as the builds succeeded, even if the installer job failed:
+    # the zip and dmg must reach the release regardless.
+    needs: [build, installer-windows]
+    if: ${{ always() && needs.build.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -115,6 +189,9 @@ jobs:
       # step, with no token plumbing on our side.
       - uses: softprops/action-gh-release@v3
         with:
-          files: dist/*.zip
+          files: |
+            dist/*.zip
+            dist/*.dmg
+            dist/*.exe
           draft: false
           generate_release_notes: true

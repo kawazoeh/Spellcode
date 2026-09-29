@@ -62,23 +62,34 @@ feature level accepted, and whether `WindowBackgroundAppearance::Blurred`
 
 ## Packaging
 
-Shipped as a `.zip` (`Spellcode-windows-x86_64.zip`). The zip contains:
+Two artefacts are produced on every release:
 
-- `spellcode-app.exe`;
-- `icon.png` (the app icon as a standalone file);
-- `README.txt` (from `packaging/windows/INSTALL.txt`).
+- **Portable zip**, `Spellcode-windows-x86_64.zip`. Contents:
+  - `spellcode-app.exe`;
+  - `icon.png` (the app icon as a standalone file);
+  - `README.txt` (from `packaging/windows/INSTALL.txt`).
 
-A real installer is realistic but is **not** done here:
+  It is always built, even if the installer job fails: the installer must not
+  be a single point of failure for a release.
 
-- **MSI** via WiX, driven by `cargo-wix`, would produce
-  `spellcode-app-<version>-x86_64.msi` with Start-menu shortcuts.
-- **NSIS** would produce a small `setup.exe`.
+- **Installer**, `Setup-Spellcode-<version>-x64.exe`, built with **NSIS** from
+  `packaging/windows/spellcode.nsi`. It installs into
+  `%ProgramFiles%\Spellcode`, creates a Start-menu entry (plus a desktop
+  shortcut), registers an entry under *Programs and Features*, and writes an
+  `Uninstall.exe`. It is 64-bit only and requests administrator rights.
 
-Either one needs an `.ico` and an app-level resource script (`.rc`) to embed
-the icon into the executable. Embedding is deliberately left out: gpui's own
-`build.rs` owns the Windows resource compilation, and adding a second one
-would touch the build of the application, which is out of scope. Distribute
-the zip as-is, or add the installer after the repository is public.
+The `.ico` is generated at build time from `assets/spellcode01.png` with
+Pillow (16/32/48/64/128/256), because the Windows runners have no `sips`. The
+workflow asserts that all six sizes are present before compiling.
 
-Code signing is also needed to avoid SmartScreen warnings; that requires a
+The MSI route (WiX via `cargo-wix`) remains an option but was not chosen: the
+request was explicitly for a `.exe`.
+
+The application icon is **not** embedded in `spellcode-app.exe`. gpui's own
+`build.rs` owns the Windows resource compilation, and adding a second `.rc`
+would touch the build of the application, which is out of scope. The installer
+and the shortcuts use `Spellcode.ico` instead, so the icon is correct
+everywhere a user sees it.
+
+Code signing is still needed to avoid SmartScreen warnings; that requires a
 certificate that is not available in the current setup.

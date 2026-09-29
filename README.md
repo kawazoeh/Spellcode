@@ -1,12 +1,11 @@
 # Spellcode
 
-A black-and-white, GPU-rendered tabbed terminal for macOS, written in Rust with
-[GPUI](https://gpui.rs).
+A black-and-white, GPU-rendered tabbed terminal for macOS and Windows, written
+in Rust with [GPUI](https://gpui.rs).
 
 [![Build status](https://img.shields.io/github/actions/workflow/status/kawazoeh/Spellcode/ci.yml?branch=main&label=build)](https://github.com/kawazoeh/Spellcode/actions)
 [![License: MIT](https://img.shields.io/github/license/kawazoeh/Spellcode)](https://github.com/kawazoeh/Spellcode/blob/main/LICENSE)
 [![Latest release](https://img.shields.io/github/v/release/kawazoeh/Spellcode)](https://github.com/kawazoeh/Spellcode/releases)
-
 
 ## Why it exists
 
@@ -19,30 +18,40 @@ while the app's own chrome stays strictly greyscale. There is no built-in
 launcher list: a single `config.toml` declares the entries that appear in the
 new-tab menu.
 
-It is aimed at macOS developers who want a small, fast, keyboard-first terminal
-they can configure with one TOML file and build from a single Rust workspace.
+It is aimed at developers who want a small, fast, keyboard-first terminal they
+can configure with one TOML file and build from a single Rust workspace.
 
 ## Installation
 
-### Prebuilt binaries
+### Prebuilt releases
 
-Download the archive for your platform from the
-[Releases](https://github.com/kawazoeh/Spellcode/releases) page: macOS on Apple silicon (arm64), macOS on
-Intel (x86_64), and Windows (x64). These builds are not signed or notarised, so
-both systems will warn you the first time you open the program.
+Every release publishes six artefacts:
 
-**macOS.** Move `Spellcode.app` to `/Applications`, then either:
+| Platform          | Artefact                             | Kind                        |
+| ----------------- | ------------------------------------ | --------------------------- |
+| macOS, Apple silicon | `Spellcode-macos-arm64.dmg`       | Drag-and-drop disk image    |
+| macOS, Apple silicon | `Spellcode-macos-arm64.zip`       | Zipped app bundle           |
+| macOS, Intel      | `Spellcode-macos-x86_64.dmg`         | Drag-and-drop disk image    |
+| macOS, Intel      | `Spellcode-macos-x86_64.zip`         | Zipped app bundle           |
+| Windows, x64      | `Setup-Spellcode-<version>-x64.exe`  | Installer (NSIS)            |
+| Windows, x64      | `Spellcode-windows-x86_64.zip`       | Portable build              |
 
-1. Control-click the app in Finder, choose **Open**, and confirm with **Open** in
-   the dialog; or
-2. clear the quarantine flag from a terminal:
+On macOS, prefer the `.dmg`: open it and drag `Spellcode.app` onto the
+`Applications` shortcut. The `.zip` is the same bundle without the disk image,
+kept as a lighter fallback. On Windows, the `Setup-…-x64.exe` installer adds a
+Start-menu entry, an uninstaller and a *Programs and Features* entry; the `.zip`
+is a portable build you can run from the folder you extract it into.
 
-   ```sh
-   xattr -dr com.apple.quarantine /Applications/Spellcode.app
-   ```
+**First launch.** The macOS bundle is signed **ad-hoc only** — no Developer ID
+and no notarisation — and the Windows binaries are unsigned, so both systems
+warn the first time:
 
-**Windows.** When SmartScreen reports "Windows protected your PC", choose
-**More info**, then **Run anyway**.
+- **macOS:** right-click the app, choose **Open**, then confirm. A plain
+  double-click still shows the "unidentified developer" dialog; removing that
+  step needs an Apple Developer ID and notarisation, which the project does not
+  have. [docs/macos.md](docs/macos.md) details what is and is not signed.
+- **Windows:** when SmartScreen reports "Windows protected your PC", choose
+  **More info**, then **Run anyway**. See [docs/windows.md](docs/windows.md).
 
 ### Build from source
 
@@ -54,37 +63,52 @@ cd spellcode
 cargo build --release
 ```
 
-The binary is `target/release/spellcode-app`. On macOS you can turn it into a
-double-clickable app bundle with an icon and an `Info.plist`:
+On macOS the binary is `target/release/spellcode-app`; to get a real app bundle
+and then a disk image:
 
 ```sh
-scripts/bundle.sh
+scripts/bundle.sh   # target/Spellcode.app, sealed and ad-hoc signed
+scripts/dmg.sh      # Spellcode.dmg around that bundle
 ```
 
-The script writes `target/Spellcode.app`. It takes an optional icon path and
-defaults to `assets/spellcode01.png`:
+`scripts/bundle.sh` takes an optional icon path and defaults to
+`assets/spellcode01.png`:
 
 ![The Spellcode app icon: a four-pointed star with bracket-like marks above, below and on either side, drawn as faint outlines on a white square.](assets/spellcode01.png)
+
+On Windows, drop the macOS-only renderer feature and build the workspace:
+
+```sh
+cargo build --release --no-default-features
+```
+
+GPUI compiles its HLSL shaders with `fxc.exe` at build time, so the Windows SDK
+must be installed and discoverable; [docs/windows.md](docs/windows.md) lists the
+exact requirements. The binary is `target/release/spellcode-app.exe`.
 
 Run the test suite with:
 
 ```sh
-cargo test
+cargo test --workspace
 ```
 
 ## Building requirements
 
 - **Rust 1.85 or newer.** The workspace uses edition 2024.
-- **macOS 11.0 or newer** for the current target. The window draws native
-  traffic-light buttons over a translucent, blurred surface, and the app bundle
-  declares `LSMinimumSystemVersion` 11.0.
-- **No full Xcode install is required.** GPUI's default macOS renderer compiles
-  its shaders with the Xcode `metal` toolchain, which is not part of the Command
-  Line Tools; the default `macos-blade` feature uses the Blade backend instead,
-  which validates its WGSL shaders through Rust. `scripts/bundle.sh` uses `sips`
-  and `iconutil`, both shipped with macOS, to build the `.icns`.
-- **Windows** builds come from the same workspace and are published from CI.
-  Building on Windows or Linux from source is not covered by this README.
+- **macOS 11.0 or newer.** The window draws native traffic-light buttons over a
+  translucent, blurred surface, and the app bundle declares
+  `LSMinimumSystemVersion` 11.0.
+- **No full Xcode install is required** for the macOS build. GPUI's default
+  macOS renderer compiles its shaders with the Xcode `metal` toolchain, which is
+  not part of the Command Line Tools; the default `macos-blade` feature uses the
+  Blade backend instead, which validates its WGSL shaders through Rust.
+  `scripts/bundle.sh` uses `sips` and `iconutil`, both shipped with macOS, to
+  build the `.icns`.
+- **Windows** needs the MSVC toolchain and a Windows SDK that provides
+  `fxc.exe`. Build with `--no-default-features`, because `macos-blade` is a
+  macOS-only renderer. See [docs/windows.md](docs/windows.md) for the details.
+- **Linux** is compiled and tested in CI with `--no-default-features` (GPUI's
+  X11 and Wayland backends), but no Linux binaries are published.
 
 ## Keyboard
 
@@ -108,7 +132,7 @@ cargo test
 
 When a session has exited, `Enter` or `r` restarts it. The right-click menus
 are the mouse equivalents of `cmd+w`, so nothing here depends on remembering a
-shortcut.
+shortcut. The list above is the macOS set.
 
 ## Configuration
 
@@ -154,8 +178,8 @@ machines. Remove every `[[apps]]` block to only ever get a shell.
 ## Look
 
 - The window is translucent and a single black wash covers the whole thing, so
-  the macOS blur reads as one surface behind the tab bar and the margins. The
-  terminal card is fully opaque on top of it, so text stays readable.
+  the blur reads as one surface behind the tab bar and the margins. The terminal
+  card is fully opaque on top of it, so text stays readable.
 - The chrome is strictly greyscale. The terminal keeps a real 256 colour
   palette, because full-screen programs rely on it.
 - Tabs carry a Font Awesome icon on the left and a background colour, both
@@ -202,9 +226,9 @@ crates/
 ## Contributing
 
 Issues and pull requests are welcome. Before opening a pull request, run
-`cargo build --release` and `cargo test`, and keep changes focused on one thing.
-There is no contribution guide beyond that; ask in the issue if anything is
-unclear.
+`cargo build --release` and `cargo test --workspace`, and keep changes focused
+on one thing. There is no contribution guide beyond that; ask in the issue if
+anything is unclear.
 
 ## Security
 

@@ -1,0 +1,47 @@
+# Security tooling for the Spellcode workspace.
+#
+# Two independent layers:
+#   * dependabot.yml  -> proposes version bumps (pull requests).
+#   * this workflow   -> fails the build on a known vulnerable crate.
+#
+# Both are advisory-only in this repository: the workflow reports the finding
+# and you decide, on purpose, whether a bump is safe for a desktop app that
+# ships binaries to users.
+
+name: Security
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # Monday, 04:17 UTC. An off-hour minute keeps this run out of the pool of
+    # every other scheduled workflow.
+    - cron: "17 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cargo-audit:
+    name: cargo audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: cargo-audit
+
+      - name: Audit the lockfile against the RustSec advisory database
+        run: |
+          cargo install cargo-audit --locked
+          cargo audit

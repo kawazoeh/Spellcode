@@ -1,0 +1,54 @@
+# Dependency update proposals for Spellcode.
+#
+# Two ecosystems are present in this repository: the Rust workspace itself,
+# and the GitHub Actions used to build and release it. Both are covered.
+#
+# Updates arrive as pull requests, one ecosystem at a time, so a bump in
+# `actions/*` can be reviewed without a toolchain change in the same diff.
+
+version: 2
+
+updates:
+  # The Rust workspace. The lockfile lives at the root, so a single entry with
+  # no `directory` covers `crates/*` as well.
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "build(cargo)"
+    labels:
+      - dependencies
+      - rust
+    groups:
+      # A Rust upgrade is only reviewable as a set: a minor bump can pull
+      # semver-compatible changes across the tree.
+      rust-minor:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "build(actions)"
+    labels:
+      - dependencies
+      - github-actions
+    groups:
+      # All action bumps together: they are reviewed as one supply-chain diff.
+      actions:
+        patterns:
+          - "*"

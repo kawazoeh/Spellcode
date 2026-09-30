@@ -1,0 +1,60 @@
+# CodeQL analysis for the Spellcode workspace.
+#
+# Uploaded results feed the repository's Security tab (code scanning alerts),
+# which is what makes a found vulnerability trackable across releases.
+#
+# Rust support is in public preview: alerts are produced, but the language is
+# not yet on CodeQL's default-setup list, so the workflow is explicit here.
+
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Tuesday, 03:41 UTC. A weekly re-scan catches advisories published for
+    # code that has not changed.
+    - cron: "41 3 * * 2"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: codeql-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: analyze (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: rust
+          # Rust is not part of the repository's default setup, so the automatic
+          # setup would not select it. Naming it here keeps the workflow
+          # self-contained.
+          queries: security-and-quality
+
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v4
+
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: "/language:rust"

@@ -35,7 +35,7 @@ jobs:
             kind: windows
             archive: Spellcode-windows-x86_64.zip
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -108,7 +108,7 @@ jobs:
           Compress-Archive -Path dist\windows\* -DestinationPath "${{ matrix.archive }}" -Force
 
       - name: Upload archive (.zip)
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.archive }}
           path: ${{ matrix.archive }}
@@ -116,7 +116,7 @@ jobs:
 
       - name: Upload disk image (.dmg)
         if: matrix.kind == 'macos'
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.disk }}
           path: ${{ matrix.disk }}
@@ -130,9 +130,9 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v8
         with:
           name: Spellcode-windows-x86_64.zip
           path: winzip
@@ -169,7 +169,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "makensis failed with exit code $LASTEXITCODE" }
           Get-Item "Setup-Spellcode-$version-x64.exe" | Format-List Name, Length
 
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         with:
           name: Setup-Spellcode-${{ github.ref_name }}-x64.exe
           path: Setup-Spellcode-*-x64.exe
@@ -186,7 +186,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v8
         with:
           path: dist
           merge-multiple: true

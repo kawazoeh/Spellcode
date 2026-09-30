@@ -40,20 +40,35 @@ impl AppEntry {
         let Some(path) = std::env::var_os("PATH") else {
             return false;
         };
-        let candidates = command_candidates(&self.command);
+        let candidates = command_candidates(&self.command, &pathext());
         std::env::split_paths(&path)
             .any(|dir| candidates.iter().any(|name| dir.join(name).is_file()))
     }
 }
 
-/// File names to probe on `PATH` for `command`. `std::env::split_paths` already
-/// handles the platform separator (`;` on Windows); a bare name such as `cmd`
-/// additionally resolves through `PATHEXT` on Windows (`.exe`, `.cmd`, ...).
-fn command_candidates(command: &str) -> Vec<String> {
+/// The Windows `PATHEXT` list, empty on every other platform. Kept out of
+/// [`command_candidates`] so that function stays pure and testable from any
+/// host.
+fn pathext() -> String {
+    if cfg!(windows) {
+        std::env::var("PATHEXT").unwrap_or_else(|_| ".COM;.EXE;.BAT;.CMD".to_string())
+    } else {
+        String::new()
+    }
+}
+
+/// File names to probe for `command`. `std::env::split_paths` already handles
+/// the platform `PATH` separator (`;` on Windows).
+///
+/// A bare name (`cmd`) and an explicit path without an extension
+/// (`C:\Program Files\Git\bin\bash`) both resolve through `PATHEXT` on Windows,
+/// exactly as `cmd.exe` and `CreateProcessW` do, so the Git-style `bash` is
+/// found as `bash.exe`. On other platforms `pathext` is empty and the command
+/// is used verbatim. A command that already carries an extension is never
+/// expanded.
+fn command_candidates(command: &str, pathext: &str) -> Vec<String> {
     let mut names = vec![command.to_string()];
-    if cfg!(windows) && Path::new(command).extension().is_none() {
-        let pathext =
-            std::env::var("PATHEXT").unwrap_or_else(|_| ".COM;.EXE;.BAT;.CMD".to_string());
+    if !pathext.is_empty() && Path::new(command).extension().is_none() {
         for ext in pathext.split(';').filter(|ext| !ext.is_empty()) {
             names.push(format!("{command}{ext}"));
         }
@@ -542,19 +557,58 @@ mod tests {
 
     // --- command lookup --------------------------------------------------
 
+    /// Without `PATHEXT` (macOS, Linux, and any Unix host) the command is used
+    /// verbatim, whether it is a bare name or a path.
     #[test]
-    fn bare_command_expands_on_windows_only() {
-        let candidates = command_candidates("tracker-api");
-        #[cfg(not(windows))]
-        assert_eq!(candidates, vec!["tracker-api".to_string()]);
-        #[cfg(windows)]
-        assert!(candidates.len() > 1, "PATHEXT extensions must be probed");
+    fn unix_uses_the_command_verbatim() {
+        assert_eq!(
+            command_candidates("tracker-api", ""),
+            vec!["tracker-api".to_string()]
+        );
+        assert_eq!(
+            command_candidates("/usr/local/bin/tool", ""),
+            vec!["/usr/local/bin/tool".to_string()]
+        );
     }
 
+    /// With `PATHEXT` (Windows) a bare name is expanded, the extensions keeping
+    /// the case `PATHEXT` uses.
     #[test]
-    fn a_command_with_a_path_is_checked_verbatim() {
-        // The command contains a separator: extensions must not be appended.
-        let candidates = command_candidates("some/dir/tool");
-        assert_eq!(candidates, vec!["some/dir/tool".to_string()]);
+    fn windows_expands_a_bare_name_through_pathext() {
+        assert_eq!(
+            command_candidates("cmd", ".EXE;.BAT"),
+            vec![
+                "cmd".to_string(),
+                "cmd.EXE".to_string(),
+                "cmd.BAT".to_string()
+            ]
+        );
+    }
+
+    /// A path without an extension is expanded too: Windows resolves
+    /// `C:\...\bash` to `bash.exe`, so the sidebar must report it as installed.
+    #[test]
+    fn windows_expands_an_extension_less_path() {
+        assert_eq!(
+            command_candidates("C:\\Program Files\\Git\\bin\\bash", ".EXE"),
+            vec![
+                "C:\\Program Files\\Git\\bin\\bash".to_string(),
+                "C:\\Program Files\\Git\\bin\\bash.EXE".to_string(),
+            ]
+        );
+    }
+
+    /// A command that already carries an extension is never expanded, on any
+    /// platform.
+    #[test]
+    fn a_command_with_an_extension_is_not_expanded() {
+        assert_eq!(
+            command_candidates("C:\\Windows\\cmd.exe", ".EXE;.BAT"),
+            vec!["C:\\Windows\\cmd.exe".to_string()]
+        );
+        assert_eq!(
+            command_candidates("/usr/bin/tool", ""),
+            vec!["/usr/bin/tool".to_string()]
+        );
     }
 }

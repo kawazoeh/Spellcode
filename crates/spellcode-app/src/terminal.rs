@@ -8,6 +8,7 @@
 use std::{cell::Cell, rc::Rc, time::Duration};
 
 use alacritty_terminal::{
+    event::WindowSize,
     grid::Scroll,
     term::{TermMode, cell::Flags},
     vte::ansi::{Color as VtColor, CursorShape, NamedColor},
@@ -256,16 +257,28 @@ impl TerminalPane {
             cx.notify();
         }
 
-        // Answer the colour queries the program makes. Window titles are
-        // deliberately ignored: a tab is named after what it runs, or after
-        // what the user called it, never after whatever the program feels
-        // like calling itself this frame.
+        // Answer the queries the program makes, over the same write path used
+        // for keyboard input. The emulator turns a query into a request:
+        // colours, verbatim replies (device status, device attributes — without
+        // these `cmd.exe` blocks on Windows), and the pixel text area size.
+        // Window titles are deliberately ignored: a tab is named after what it
+        // runs, or after what the user called it, never after whatever the
+        // program feels like calling itself this frame.
+        let window_size = WindowSize {
+            num_lines: self.size.rows,
+            num_cols: self.size.cols,
+            cell_width: u32::from(self.fonts.cell_width).min(u32::from(u16::MAX)) as u16,
+            cell_height: u32::from(self.fonts.line_height).min(u32::from(u16::MAX)) as u16,
+        };
         let mut reply = String::new();
         let background = self.palette.background;
         let foreground = self.palette.foreground;
-        self.requests.drain(|request| {
-            let TermRequest::Color(index, responder) = request;
-            reply.push_str(&responder(palette_rgb(index, background, foreground)));
+        self.requests.drain(|request| match request {
+            TermRequest::Color(index, responder) => {
+                reply.push_str(&responder(palette_rgb(index, background, foreground)));
+            }
+            TermRequest::Write(text) => reply.push_str(&text),
+            TermRequest::TextAreaSize(responder) => reply.push_str(&responder(window_size)),
         });
 
         if !reply.is_empty() {

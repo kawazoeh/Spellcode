@@ -1,13 +1,30 @@
 //! Regression test: a PTY child must inherit the parent's environment and only
 //! have the terminal-specific overrides applied on top.
 //!
-//! The child is asked to dump its environment with the command the host OS
-//! provides (`env` on Unix, `cmd /C set` on Windows), so the test runs on every
-//! platform the CI builds.
+//! The child dumps its environment with the command the host OS provides
+//! (`env` on Unix, `cmd /C set` on Windows), so the test runs everywhere the CI
+//! builds. A bare `pty` has no terminal emulator behind it, so the test answers
+//! the terminal queries the child makes — notably the cursor-position report
+//! (DSR) that `cmd.exe` sends on startup and then waits for.
 
 use std::time::{Duration, Instant};
 
 use spellcode_term::{PtySession, SpawnSpec, TermSize};
+
+/// Terminal queries a real emulator answers, with the reply to send back. A
+/// pty with no emulator would leave the child blocked waiting for them.
+const QUERIES: &[(&[u8], &[u8])] = &[
+    // DSR: report the cursor position. `cmd.exe` sends this under ConPTY at
+    // startup and waits for the reply before printing anything.
+    (b"\x1b[6n", b"\x1b[1;1R"),
+    // DSR: report the terminal is operating.
+    (b"\x1b[5n", b"\x1b[0n"),
+    // DA1 / DA2: device attributes.
+    (b"\x1b[c", b"\x1b[?1;0c"),
+    (b"\x1b[>c", b"\x1b[>0;0;0c"),
+    // CSI 18 t: report the text area size in cells (answered from the grid).
+    (b"\x1b[18t", b"\x1b[8;24;80t"),
+];
 
 /// A command that prints the environment of the process it runs in, as
 /// `KEY=VALUE` lines.
@@ -17,6 +34,46 @@ fn env_command() -> (String, Vec<String>) {
         (comspec, vec!["/C".to_string(), "set".to_string()])
     } else {
         ("env".to_string(), Vec::new())
+    }
+}
+
+/// First index of `needle` in `haystack`.
+fn find_subslice(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    if needle.is_empty() || haystack.len() < needle.len() {
+        return None;
+    }
+    haystack
+        .windows(needle.len())
+        .position(|window| window == needle)
+}
+
+/// Answers the queries found in `pending`, consuming each exactly once. Keeps
+/// only a short tail, long enough to hold the prefix of a query split across
+/// two reads.
+fn answer_queries(session: &mut PtySession, pending: &mut Vec<u8>) {
+    loop {
+        let mut earliest: Option<(usize, usize, &'static [u8])> = None;
+        for (pattern, reply) in QUERIES {
+            if let Some(index) = find_subslice(pending, pattern)
+                && earliest.is_none_or(|(start, _, _)| index < start)
+            {
+                earliest = Some((index, pattern.len(), reply));
+            }
+        }
+        match earliest {
+            Some((index, length, reply)) => {
+                if !reply.is_empty() {
+                    session.send(reply);
+                }
+                pending.drain(..index + length);
+            }
+            None => break,
+        }
+    }
+    const TAIL: usize = 8;
+    if pending.len() > TAIL {
+        let drop = pending.len() - TAIL;
+        pending.drain(..drop);
     }
 }
 
@@ -40,9 +97,12 @@ fn child_env() -> String {
     // whatever the child printed.
     let deadline = Instant::now() + Duration::from_secs(10);
     let mut out = Vec::new();
+    let mut pending = Vec::new();
     loop {
         let (chunk, closed) = session.drain();
         out.extend_from_slice(&chunk);
+        pending.extend_from_slice(&chunk);
+        answer_queries(&mut session, &mut pending);
         if closed || Instant::now() > deadline {
             break;
         }
@@ -52,15 +112,25 @@ fn child_env() -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
-/// Reads `KEY=value` from an environment dump. Keys are compared
-/// case-insensitively: Windows stores and prints them uppercased.
+/// Parses `KEY=VALUE` lines. Keys are matched case-insensitively: Windows
+/// stores and prints them uppercased.
+fn parse_env(env: &str) -> Vec<(String, String)> {
+    env.lines()
+        .filter_map(|line| {
+            let (name, value) = line.split_once('=')?;
+            let name = name.trim();
+            if name.is_empty() {
+                return None;
+            }
+            Some((name.to_string(), value.trim_end_matches('\r').to_string()))
+        })
+        .collect()
+}
+
 fn lookup(env: &str, key: &str) -> Option<String> {
-    env.lines().find_map(|line| {
-        let (name, value) = line.split_once('=')?;
-        name.trim()
-            .eq_ignore_ascii_case(key)
-            .then(|| value.trim_end_matches('\r').to_string())
-    })
+    parse_env(env)
+        .into_iter()
+        .find_map(|(name, value)| name.eq_ignore_ascii_case(key).then_some(value))
 }
 
 /// A variable that exists in this process on every platform, used as the
@@ -78,9 +148,17 @@ fn probe_variable() -> &'static str {
 #[test]
 fn pty_child_inherits_the_parent_environment() {
     let env = child_env();
+
+    // Guard the real failure mode first: a child that printed nothing (for
+    // example because it is blocked on an unanswered terminal query) must say
+    // so, instead of a misleading "must be inherited" on an empty dump.
+    assert!(
+        !parse_env(&env).is_empty(),
+        "the PTY child printed no environment variables; captured output was:\n{env:?}"
+    );
+
     let probe = probe_variable();
     let expected = std::env::var(probe).expect("the probe variable is set");
-
     assert_eq!(
         lookup(&env, probe).as_deref(),
         Some(expected.as_str()),

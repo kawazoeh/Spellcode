@@ -7,7 +7,7 @@ use std::sync::{
 };
 
 use alacritty_terminal::{
-    event::{Event, EventListener},
+    event::{Event, EventListener, WindowSize},
     grid::{Dimensions, Grid, Scroll},
     term::{Config, Term, TermMode},
     vte::ansi::{CursorShape, Processor, Rgb},
@@ -53,12 +53,20 @@ impl Dimensions for TermSize {
     }
 }
 
-/// Something the emulator asks the host to do, such as answering an OSC
-/// colour query.
+/// Something the emulator asks the host to do: answer a query the program made,
+/// by writing the reply back to the PTY.
 pub enum TermRequest {
     /// The program asked for the colour at `index`; call the responder with
     /// that colour to produce the reply.
     Color(usize, Arc<dyn Fn(Rgb) -> String + Send + Sync>),
+    /// The emulator already built the exact bytes to send back — device status
+    /// reports (cursor position), device attributes, mode reports. Write them
+    /// to the PTY verbatim. A program that asks and gets no reply (`cmd.exe`
+    /// sending `ESC[6n` under ConPTY) blocks forever.
+    Write(String),
+    /// The program asked for the text area size in pixels; call the responder
+    /// with the current window size to produce the reply.
+    TextAreaSize(Arc<dyn Fn(WindowSize) -> String + Send + Sync>),
 }
 
 /// The emulator's side of the request channel.
@@ -76,9 +84,15 @@ impl RequestSink {
 
 impl EventListener for RequestSink {
     fn send_event(&self, event: Event) {
-        if let Event::ColorRequest(index, responder) = event {
-            let _ = self.sender.send(TermRequest::Color(index, responder));
-        }
+        // Every event the host must act on becomes a request. Anything else the
+        // emulator reports (titles, bell, wakeups) is intentionally dropped.
+        let request = match event {
+            Event::ColorRequest(index, responder) => TermRequest::Color(index, responder),
+            Event::PtyWrite(text) => TermRequest::Write(text),
+            Event::TextAreaSizeRequest(responder) => TermRequest::TextAreaSize(responder),
+            _ => return,
+        };
+        let _ = self.sender.send(request);
     }
 }
 
@@ -182,5 +196,80 @@ impl TerminalCore {
 
     pub fn scroll_to_bottom(&mut self) {
         self.term.scroll_display(Scroll::Bottom);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn core() -> (TerminalCore, Requests) {
+        let (sink, requests) = RequestSink::channel();
+        (
+            TerminalCore::new(TermSize::default(), 1_000, sink),
+            requests,
+        )
+    }
+
+    /// Collects the verbatim replies the emulator produced.
+    fn writes(requests: &mut Requests) -> Vec<String> {
+        let mut out = Vec::new();
+        requests.drain(|request| {
+            if let TermRequest::Write(text) = request {
+                out.push(text);
+            }
+        });
+        out
+    }
+
+    /// `ESC[6n` (DSR, cursor position) must produce a reply: this is the exact
+    /// query `cmd.exe` sends under ConPTY and then waits for.
+    #[test]
+    fn cursor_position_query_is_answered() {
+        let (mut core, mut requests) = core();
+        core.write(b"\x1b[6n");
+        assert_eq!(writes(&mut requests), vec!["\x1b[1;1R".to_string()]);
+    }
+
+    /// `ESC[c` (DA1, device attributes) must also produce a reply.
+    #[test]
+    fn device_attributes_query_is_answered() {
+        let (mut core, mut requests) = core();
+        core.write(b"\x1b[c");
+        let replies = writes(&mut requests);
+        assert_eq!(replies.len(), 1, "one DA reply expected, got {replies:?}");
+        assert!(
+            replies[0].starts_with("\x1b[?") && replies[0].ends_with('c'),
+            "got {replies:?}"
+        );
+    }
+
+    /// `ESC[14t` (text area size in pixels) needs host data, so it must arrive
+    /// as a `TextAreaSize` request rather than be dropped.
+    #[test]
+    fn text_area_size_query_reaches_the_host() {
+        let (mut core, mut requests) = core();
+        core.write(b"\x1b[14t");
+        let mut asked = false;
+        requests.drain(|request| {
+            if let TermRequest::TextAreaSize(_) = request {
+                asked = true;
+            }
+        });
+        assert!(asked, "the pixel size query must reach the host");
+    }
+
+    /// The existing colour path must stay intact.
+    #[test]
+    fn colour_query_still_reaches_the_host() {
+        let (mut core, mut requests) = core();
+        core.write(b"\x1b]10;?\x07");
+        let mut colors = 0;
+        requests.drain(|request| {
+            if let TermRequest::Color(..) = request {
+                colors += 1;
+            }
+        });
+        assert_eq!(colors, 1, "the colour path must stay intact");
     }
 }

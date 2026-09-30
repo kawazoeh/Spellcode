@@ -86,10 +86,16 @@ impl PtySession {
             command.env(key, value);
         }
 
-        let child = pair
-            .slave
-            .spawn_command(command)
-            .context("failed to spawn command")?;
+        let child = match pair.slave.spawn_command(command) {
+            Ok(child) => child,
+            // The OS error for a missing program (Windows `CreateProcessW`,
+            // with a NUL-terminated path) is unreadable. Replace it with a
+            // plain message when the program really cannot be resolved.
+            Err(_) if !program_exists(&spec.program) => {
+                anyhow::bail!("{}", not_found_message(&spec.program));
+            }
+            Err(error) => return Err(error.context("failed to spawn command")),
+        };
         // Dropping the slave end is what makes the master read return EOF once
         // the child is gone.
         drop(pair.slave);
@@ -180,5 +186,94 @@ impl PtySession {
 impl Drop for PtySession {
     fn drop(&mut self) {
         let _ = self.killer.kill();
+    }
+}
+
+/// Whether `program` can be resolved to something the OS will run: an existing
+/// file when it contains a path separator, otherwise an entry on `PATH`
+/// (expanded through `PATHEXT` on Windows for a bare name).
+fn program_exists(program: &str) -> bool {
+    if program.contains('/') || program.contains('\\') {
+        return std::path::Path::new(program).is_file();
+    }
+    let Some(path) = std::env::var_os("PATH") else {
+        return false;
+    };
+    let mut names = vec![program.to_string()];
+    if cfg!(windows) && std::path::Path::new(program).extension().is_none() {
+        let pathext =
+            std::env::var("PATHEXT").unwrap_or_else(|_| ".COM;.EXE;.BAT;.CMD".to_string());
+        for ext in pathext.split(';').filter(|ext| !ext.is_empty()) {
+            names.push(format!("{program}{ext}"));
+        }
+    }
+    std::env::split_paths(&path).any(|dir| names.iter().any(|name| dir.join(name).is_file()))
+}
+
+/// Readable "cannot start" message. A shell keeps the wording the user
+/// expects; anything else is reported as a command.
+fn not_found_message(program: &str) -> String {
+    let kind = if is_shell(program) {
+        "shell"
+    } else {
+        "command"
+    };
+    format!("{kind} not found: {program}")
+}
+
+/// Whether the program name looks like an interactive shell. Only used to pick
+/// the wording of an error message, never to change behaviour.
+fn is_shell(program: &str) -> bool {
+    let name = program
+        .rsplit(['/', '\\'])
+        .next()
+        .unwrap_or(program)
+        .to_ascii_lowercase();
+    let stem = name.strip_suffix(".exe").unwrap_or(name.as_str());
+    matches!(
+        stem,
+        "zsh"
+            | "bash"
+            | "sh"
+            | "fish"
+            | "dash"
+            | "ksh"
+            | "csh"
+            | "tcsh"
+            | "cmd"
+            | "powershell"
+            | "pwsh"
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn missing_shell_gets_a_readable_message() {
+        assert_eq!(not_found_message("/bin/zsh"), "shell not found: /bin/zsh");
+        assert_eq!(
+            not_found_message("C:\\Windows\\cmd.exe"),
+            "shell not found: C:\\Windows\\cmd.exe"
+        );
+        assert_eq!(not_found_message("pwsh"), "shell not found: pwsh");
+    }
+
+    #[test]
+    fn missing_command_is_reported_as_a_command() {
+        assert_eq!(
+            not_found_message("tracker-api"),
+            "command not found: tracker-api"
+        );
+    }
+
+    #[test]
+    fn existing_programs_are_found() {
+        // `/bin/sh` exists on every Unix host; the path separator branch does
+        // not consult PATH.
+        #[cfg(unix)]
+        assert!(program_exists("/bin/sh"));
+        assert!(!program_exists("/definitely/not/here/tool"));
     }
 }

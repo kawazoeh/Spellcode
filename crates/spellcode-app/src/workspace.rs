@@ -1,8 +1,8 @@
 //! The root view: a tab bar with the Spellcode wordmark, plus the panes.
 
 use gpui::{
-    Context, Entity, FontWeight, KeyDownEvent, MouseButton, MouseDownEvent, Pixels, Point, Render,
-    SharedString, Subscription, Window, div, prelude::*, px,
+    Context, Entity, FocusHandle, FontWeight, KeyDownEvent, MouseButton, MouseDownEvent, Pixels,
+    Point, Render, SharedString, Subscription, Window, div, prelude::*, px,
 };
 use spellcode_term::{SpawnSpec, TermSize};
 
@@ -21,6 +21,16 @@ const HEADER_LEADING: f32 = 82.;
 /// so the tint has to cover everything the opaque terminal card does not.
 /// How far below the click a menu opens, so it clears the tab bar.
 const MENU_DROP: f32 = 22.;
+/// Width of one caption button, the size Windows itself uses.
+const CAPTION_BUTTON_WIDTH: f32 = 46.;
+/// Whether the app has to draw the window buttons itself. macOS draws its
+/// traffic lights over the transparent title bar, Windows has no equivalent.
+const SELF_DRAWN_CAPTION: bool = cfg!(target_os = "windows");
+/// Left inset of the tab bar. macOS needs room for the traffic lights; on
+/// Windows that space would be dead.
+const HEADER_LEADING_WINDOWS: f32 = 12.;
+/// How many caption buttons the app draws: minimise, zoom, close.
+const CAPTION_BUTTONS: usize = 3;
 /// Inset around the terminal so its corners can be rounded.
 const CORNER_MARGIN: f32 = 6.;
 /// A tighter top inset, so the terminal sits close under the tab bar.
@@ -40,6 +50,93 @@ pub struct Workspace {
     /// what actually opens the starting shell and hands it the focus.
     start_shell_on_first_frame: bool,
     subscriptions: Vec<Subscription>,
+    /// One focus handle per caption button, so the window controls can be
+    /// reached with the keyboard on Windows.
+    caption_focus: Vec<FocusHandle>,
+    /// Which caption button the pointer is on, if any. The glyph has to be
+    /// repainted with it, a hover style cannot reach into a canvas.
+    caption_hover: Option<usize>,
+}
+
+/// What a caption button does.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Caption {
+    Minimize,
+    Zoom { maximized: bool },
+    Close,
+}
+
+/// Size of the drawn glyph inside a caption button, in points.
+const CAPTION_GLYPH: f32 = 10.;
+
+/// Draws a caption glyph as strokes, so the buttons stay monochrome and need
+/// no font: a bar, a square or a cross.
+fn glyph_shape(caption: Caption, color: gpui::Hsla) -> gpui::AnyElement {
+    let size = CAPTION_GLYPH;
+    let half = size / 2.;
+    let stroke = px(1.);
+
+    // A square outline, drawn as four sides.
+    let square = |left: f32, top: f32, right: f32, bottom: f32| {
+        vec![
+            (left, top),
+            (right, top),
+            (right, bottom),
+            (left, bottom),
+            (left, top),
+        ]
+    };
+    // The strokes of a path, as offset pairs relative to the canvas origin.
+    let sides = |points: Vec<(f32, f32)>| {
+        points
+            .windows(2)
+            .map(|pair| (pair[0], pair[1]))
+            .collect::<Vec<_>>()
+    };
+
+    let strokes: Vec<((f32, f32), (f32, f32))> = match caption {
+        // A bar sitting on the baseline, as Windows draws minimise.
+        Caption::Minimize => sides(vec![(half - 4., half + 3.), (half + 4., half + 3.)]),
+        Caption::Zoom { maximized: false } => {
+            sides(square(half - 4., half - 4., half + 4., half + 4.))
+        }
+        // Restore is two squares: the front one, and the back one peeking out
+        // from behind its top left corner.
+        Caption::Zoom { maximized: true } => {
+            let mut front = sides(square(half - 4., half - 1., half + 4., half + 4.));
+            // The back square only shows its top and left edges, the rest is
+            // hidden behind the front one.
+            front.extend(sides(vec![(half - 1., half - 4.), (half - 1., half - 1.)]));
+            front.extend(sides(vec![(half - 1., half - 4.), (half + 4., half - 4.)]));
+            front.extend(sides(vec![(half + 4., half - 4.), (half + 4., half - 1.)]));
+            front
+        }
+        Caption::Close => sides(vec![(half - 3.5, half - 3.5), (half + 3.5, half + 3.5)])
+            .into_iter()
+            .chain(sides(vec![
+                (half + 3.5, half - 3.5),
+                (half - 3.5, half + 3.5),
+            ]))
+            .collect(),
+    };
+
+    gpui::canvas(
+        |_bounds, _window, _cx| (),
+        move |bounds, (), window, _cx| {
+            let origin = bounds.origin;
+            for (from, to) in strokes {
+                let mut path = gpui::PathBuilder::stroke(stroke);
+                path.move_to(gpui::point(origin.x + px(from.0), origin.y + px(from.1)));
+                path.line_to(gpui::point(origin.x + px(to.0), origin.y + px(to.1)));
+                if let Ok(path) = path.build() {
+                    window.paint_path(path, color);
+                }
+            }
+        },
+    )
+    .w(px(size))
+    .h(px(size))
+    .into_any_element()
 }
 
 struct Pane {
@@ -58,6 +155,7 @@ impl Workspace {
         let palette = Palette::dark();
         let theme = Theme::monochrome();
         let overlay = cx.new(|cx| OverlayView::new(theme, cx));
+        let caption_focus = (0..CAPTION_BUTTONS).map(|_| cx.focus_handle()).collect();
 
         Self {
             config,
@@ -70,6 +168,8 @@ impl Workspace {
             last_viewport: (0., 0.),
             start_shell_on_first_frame: true,
             subscriptions: Vec::new(),
+            caption_focus,
+            caption_hover: None,
         }
     }
 
@@ -109,7 +209,10 @@ impl Workspace {
         spec.args = entry.args.clone();
 
         if !entry.cwd.is_empty() {
-            spec.cwd = Some(std::path::PathBuf::from(expand_tilde(&entry.cwd)));
+            spec.cwd = Some(std::path::PathBuf::from(expand_tilde(
+                &entry.cwd,
+                crate::config::home_dir().as_deref(),
+            )));
         } else {
             spec.cwd = self.config.cwd();
         }
@@ -331,8 +434,9 @@ impl Workspace {
         )
     }
 
-    fn render_header(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> gpui::AnyElement {
+    fn render_header(&mut self, window: &mut Window, cx: &mut Context<Self>) -> gpui::AnyElement {
         let theme = self.theme;
+        let maximized = window.is_maximized();
 
         let tabs: Vec<TabInfo> = self
             .panes
@@ -377,14 +481,38 @@ impl Workspace {
                 }),
             );
 
+        // The tab list takes the slack, so a long list scrolls instead of
+        // pushing the window buttons off the right edge.
+        let mut strip = div()
+            .id("tab-strip")
+            .flex_1()
+            .min_w_0()
+            .h_full()
+            .flex()
+            .items_center()
+            .gap_1()
+            .overflow_x_scroll();
+
+        // No air between the new-tab button and the first tab: the button
+        // already reads as its own thing.
+        for tab in tabs {
+            strip = strip.child(tab.element(theme, cx));
+        }
+
+        let leading = if SELF_DRAWN_CAPTION {
+            HEADER_LEADING_WINDOWS
+        } else {
+            HEADER_LEADING
+        };
+
         let mut header = div()
             .h(px(TAB_BAR_HEIGHT))
             .flex_shrink_0()
             .flex()
             .items_center()
             .gap_1()
-            .pl(px(HEADER_LEADING))
-            .pr_4()
+            .pl(px(leading))
+            .pr(px(if SELF_DRAWN_CAPTION { 0. } else { 16. }))
             .child(
                 div()
                     .text_lg()
@@ -394,15 +522,97 @@ impl Workspace {
             )
             .child(div().w(px(3.)))
             .child(div().w(px(1.)).h(px(18.)).bg(theme.border))
-            .child(new_tab);
+            .child(new_tab)
+            .child(strip);
 
-        // No air between the new-tab button and the first tab: the button
-        // already reads as its own thing.
-        for tab in tabs {
-            header = header.child(tab.element(theme, cx));
+        if SELF_DRAWN_CAPTION {
+            header = header.child(self.window_buttons(maximized, cx));
         }
 
         header.into_any_element()
+    }
+
+    /// The caption buttons Windows never draws for us: the same three squares
+    /// as the system ones, in the app's monochrome.
+    ///
+    /// macOS needs none of this, its traffic lights are already there.
+    fn window_buttons(&mut self, maximized: bool, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let captions = [
+            Caption::Minimize,
+            Caption::Zoom { maximized },
+            Caption::Close,
+        ];
+
+        let mut row = div().flex_shrink_0().h_full().flex().items_center();
+
+        for (index, caption) in captions.into_iter().enumerate() {
+            row = row.child(self.caption_button(index, caption, cx));
+        }
+
+        row.into_any_element()
+    }
+
+    fn caption_button(
+        &mut self,
+        index: usize,
+        caption: Caption,
+        cx: &mut Context<Self>,
+    ) -> gpui::Stateful<gpui::Div> {
+        let theme = self.theme;
+        let focus = self.caption_focus[index].clone();
+        let id = SharedString::from(format!("window-button:{index}"));
+        let hovered = self.caption_hover == Some(index);
+
+        // Close is the one button that has to stand out, so it inverts on
+        // hover instead of taking a grey, the way the system one does.
+        let destructive = matches!(caption, Caption::Close);
+        let (idle_bg, hover_bg) = if destructive {
+            (gpui::transparent_black(), theme.text)
+        } else {
+            (gpui::transparent_black(), theme.accent_soft)
+        };
+        let (idle_fg, hover_fg) = if destructive {
+            (theme.text_dim, theme.background)
+        } else {
+            (theme.text_dim, theme.text)
+        };
+        let glyph_fg = if hovered { hover_fg } else { idle_fg };
+
+        div()
+            .id(id)
+            .w(px(CAPTION_BUTTON_WIDTH))
+            .h_full()
+            .flex()
+            .items_center()
+            .justify_center()
+            .cursor_pointer()
+            .bg(idle_bg)
+            .hover(move |style| style.bg(hover_bg))
+            .active(move |style| style.bg(hover_bg))
+            // Keyboard reachable: GPUI turns Enter and Space into a click on a
+            // focused element, and tab navigation walks the three buttons.
+            .track_focus(&focus)
+            .tab_stop(true)
+            .tab_index(index as isize)
+            .focus(move |style| style.border_1().border_color(theme.text_dim))
+            .on_hover(cx.listener(move |this, is_hovered, _, cx| {
+                let hovered = if *is_hovered { Some(index) } else { None };
+                if this.caption_hover != hovered {
+                    this.caption_hover = hovered;
+                    cx.notify();
+                }
+            }))
+            .child(glyph_shape(caption, glyph_fg))
+            .on_click(cx.listener(move |this, _, window, cx| match caption {
+                Caption::Minimize => window.minimize_window(),
+                Caption::Zoom { .. } => window.zoom_window(),
+                Caption::Close => {
+                    // Hand the focus back before the window goes away, so the
+                    // terminal does not keep a dead focus.
+                    this.focus_active(window, cx);
+                    window.remove_window();
+                }
+            }))
     }
 
     fn open_new_tab_menu(
@@ -583,15 +793,47 @@ impl Render for Workspace {
     }
 }
 
-fn expand_tilde(path: &str) -> String {
-    match path.strip_prefix("~/") {
-        Some(rest) => match std::env::var_os("HOME") {
-            Some(home) => std::path::Path::new(&home)
-                .join(rest)
-                .to_string_lossy()
-                .into_owned(),
-            None => path.to_string(),
-        },
-        None => path.to_string(),
+/// Expands a leading `~` using the platform home directory. Both `~/` and
+/// `~\` are accepted so a Windows-style path works there too. With no home
+/// available the path is returned unchanged.
+fn expand_tilde(path: &str, home: Option<&std::path::Path>) -> String {
+    let rest = path.strip_prefix("~/").or_else(|| path.strip_prefix("~\\"));
+    match (rest, home) {
+        (Some(rest), Some(home)) => home.join(rest).to_string_lossy().into_owned(),
+        _ => path.to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::expand_tilde;
+    use std::path::Path;
+
+    #[test]
+    fn tilde_expands_with_the_home_directory() {
+        assert_eq!(
+            expand_tilde("~/project", Some(Path::new("/Users/kaito"))),
+            Path::new("/Users/kaito").join("project").to_string_lossy()
+        );
+    }
+
+    #[test]
+    fn tilde_accepts_a_windows_separator() {
+        let expanded = expand_tilde("~\\project", Some(Path::new("C:\\Users\\Zenax")));
+        assert!(expanded.ends_with("project"), "got {expanded}");
+        assert!(expanded.contains("Zenax"), "got {expanded}");
+    }
+
+    #[test]
+    fn tilde_is_left_alone_without_a_home() {
+        assert_eq!(expand_tilde("~/project", None), "~/project");
+    }
+
+    #[test]
+    fn a_path_without_a_tilde_is_untouched() {
+        assert_eq!(
+            expand_tilde("/absolute/path", Some(Path::new("/Users/kaito"))),
+            "/absolute/path"
+        );
     }
 }

@@ -1,73 +1,74 @@
 <p align="center">
-  <img src="assets/spellcode01.png" alt="L'icône de l'application Spellcode : une étoile à quatre branches encadrée de marques en forme de crochets au-dessus, en dessous et de chaque côté, dessinée en traits pâles sur un carré blanc." width="96">
+  <img src="assets/spellcode01.png" alt="L'icône de Spellcode : une étoile à quatre branches encadrée de crochets au-dessus, en dessous et de chaque côté, dessinée en traits pâles sur fond blanc." width="96">
 </p>
 
 <h1 align="center">Spellcode</h1>
 
-Un terminal à onglets en noir et blanc, rendu par le GPU, pour macOS et Windows,
-écrit en Rust avec [GPUI](https://gpui.rs).
+<p align="center"><strong>Un terminal rapide et monochrome, pour macOS et Windows.</strong></p>
 
-[![Build status](https://img.shields.io/github/actions/workflow/status/kawazoeh/Spellcode/ci.yml?branch=main&label=build)](https://github.com/kawazoeh/Spellcode/actions)
-[![License: MIT](https://img.shields.io/github/license/kawazoeh/Spellcode)](https://github.com/kawazoeh/Spellcode/blob/main/LICENSE)
-[![Latest release](https://img.shields.io/github/v/release/kawazoeh/Spellcode)](https://github.com/kawazoeh/Spellcode/releases)
+<p align="center">
+  <a href="https://github.com/kawazoeh/Spellcode/actions"><img src="https://img.shields.io/github/actions/workflow/status/kawazoeh/Spellcode/ci.yml?branch=main&label=build" alt="État du build"></a>
+  <a href="https://github.com/kawazoeh/Spellcode/releases"><img src="https://img.shields.io/github/v/release/kawazoeh/Spellcode" alt="Dernière version"></a>
+  <img src="https://img.shields.io/badge/macOS-11%2B-black?logo=apple&logoColor=white" alt="macOS 11 ou plus récent">
+  <img src="https://img.shields.io/badge/Windows-10%2B-0078D6?logo=windows&logoColor=white" alt="Windows 10 ou plus récent">
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/kawazoeh/Spellcode" alt="Licence MIT"></a>
+</p>
 
-[English](README.md) · **Français**
+<p align="center"><a href="README.md">English</a> · Français</p>
 
-## Pourquoi il existe
+Spellcode est un terminal à onglets qui sait se faire oublier. Écrit en Rust, il
+repose sur [GPUI](https://gpui.rs), le framework d'interface accéléré par GPU des
+créateurs de Zed, et dessine chaque panneau sur la carte graphique. Le chrome de
+l'application est en noir et blanc ; votre shell, lui, garde ses 256 couleurs,
+car les programmes plein écran n'attendent rien de moins.
 
-Un terminal passe l'essentiel de son temps à ne rien faire. Spellcode ne repeint
-un panneau que lorsque son PTY a produit de la sortie ou que le curseur a
-clignoté : un onglet ouvert mais silencieux ne coûte donc rien, et un repaint
-complet coûte à peu près autant qu'un curseur qui clignote. La barre d'onglets
-tient lieu de barre de titre, si bien qu'aucune rangée de chrome supplémentaire
-ne mange de hauteur. Chaque onglet est un vrai PTY derrière un émulateur VT 256
-couleurs complet, pour que les programmes plein écran se comportent normalement,
-tandis que le chrome de l'application reste strictement en niveaux de gris. Il
-n'y a pas de liste de lancement intégrée : un seul `config.toml` déclare les
-entrées qui apparaissent dans le menu de nouvel onglet.
+La barre d'onglets **est** la barre de titre. Pas de bandeau gris supplémentaire
+au-dessus du terminal : les boutons de fenêtre sont alignés avec le nom, la
+barre est translucide sur le flou du système, et `+` ouvre un nouveau shell (ou
+n'importe quel programme ajouté à la configuration). Un shell tourne déjà au
+moment où la fenêtre s'affiche.
 
-Il s'adresse aux développeurs qui veulent un terminal petit, rapide et pensé
-pour le clavier, configurable avec un seul fichier TOML et compilable depuis un
-unique workspace Rust.
+Et il est vif, parce qu'il refuse le travail inutile : un panneau ne se redessine
+que lorsque le PTY produit vraiment de la sortie ou que le curseur clignote. Un
+onglet au repos ne coûte donc rien. Les détails sont [sous le capot](#sous-le-capot),
+si ça vous intéresse.
 
 ## Installation
 
-### Versions précompilées
+Chaque version publie les six mêmes fichiers. Récupérez celui de votre machine
+sur la [page des releases](https://github.com/kawazoeh/Spellcode/releases) :
 
-Chaque version publie six artefacts :
+| Plateforme            | Fichier                              |
+| --------------------- | ------------------------------------ |
+| macOS · Apple silicon | `Spellcode-macos-arm64.dmg`          |
+| macOS · Apple silicon | `Spellcode-macos-arm64.zip`          |
+| macOS · Intel         | `Spellcode-macos-x86_64.dmg`         |
+| macOS · Intel         | `Spellcode-macos-x86_64.zip`         |
+| Windows · x64         | `Setup-Spellcode-<version>-x64.exe`  |
+| Windows · x64         | `Spellcode-windows-x86_64.zip`       |
 
-| Plateforme           | Artefact                             | Type                             |
-| -------------------- | ------------------------------------ | -------------------------------- |
-| macOS, Apple silicon | `Spellcode-macos-arm64.dmg`          | Image disque par glisser-déposer |
-| macOS, Apple silicon | `Spellcode-macos-arm64.zip`          | Bundle d'application zippé       |
-| macOS, Intel         | `Spellcode-macos-x86_64.dmg`         | Image disque par glisser-déposer |
-| macOS, Intel         | `Spellcode-macos-x86_64.zip`         | Bundle d'application zippé       |
-| Windows, x64         | `Setup-Spellcode-<version>-x64.exe`  | Installateur (NSIS)              |
-| Windows, x64         | `Spellcode-windows-x86_64.zip`       | Version portable                 |
+**macOS.** Prenez le `.dmg`, ouvrez-le et glissez Spellcode dans Applications.
+Le `.zip` est le même bundle sans l'image disque, si vous préférez. La version
+est signée en ad-hoc, pas avec un Developer ID, donc Gatekeeper posera sa
+question une fois : clic droit sur l'application, **Ouvrir**, puis confirmez.
+Ensuite, un double-clic ordinaire suffit. Pour qu'elle s'ouvre sans rien
+demander dès le premier lancement, il faudrait un Apple Developer ID payant et
+une notarisation ; [docs/macos.md](docs/macos.md) détaille précisément ce qui est
+signé et ce qui ne l'est pas.
 
-Sur macOS, préférez le `.dmg` : ouvrez-le et glissez `Spellcode.app` sur le
-raccourci `Applications`. Le `.zip` est le même bundle sans l'image disque,
-conservé comme secours plus léger. Sur Windows, l'installateur
-`Setup-…-x64.exe` ajoute une entrée au menu Démarrer, un désinstalleur et une
-entrée dans *Programmes et fonctionnalités* ; le `.zip` est une version portable
-que vous lancez depuis le dossier où vous l'avez extrait.
+**Windows.** L'installateur `Setup-…-x64.exe` ajoute une entrée au menu Démarrer,
+un désinstalleur et une ligne dans *Programmes et fonctionnalités* ; le `.zip`
+est là pour une version portable, si vous préférez ne rien installer. Aucun des
+deux n'est signé, donc SmartScreen affiche « Windows a protégé votre PC » au
+premier lancement : **Informations complémentaires**, puis **Exécuter quand
+même**. Les notes de build sont dans [docs/windows.md](docs/windows.md).
 
-**Premier lancement.** Le bundle macOS est signé **en ad-hoc seulement** — sans
-Developer ID ni notarisation — et les binaires Windows ne sont pas signés, donc
-les deux systèmes préviennent au premier lancement :
+## Compiler soi-même
 
-- **macOS :** faites un clic droit sur l'application, choisissez **Ouvrir**,
-  puis confirmez. Un simple double-clic affiche encore la boîte « développeur
-  non identifié » ; la supprimer exigerait un Apple Developer ID et une
-  notarisation, dont le projet ne dispose pas. [docs/macos.md](docs/macos.md)
-  détaille ce qui est signé et ce qui ne l'est pas.
-- **Windows :** quand SmartScreen affiche « Windows a protégé votre PC »,
-  choisissez **Informations complémentaires**, puis **Exécuter quand même**.
-  Voir [docs/windows.md](docs/windows.md).
-
-### Compiler depuis les sources
-
-Nécessite Rust (voir [Exigences de compilation](#exigences-de-compilation)).
+Il faut Rust 1.85 ou plus récent, et c'est à peu près tout. Sous macOS, pas
+besoin d'une installation complète de Xcode : le moteur de rendu `macos-blade`,
+activé par défaut, compile les shaders de GPUI via Rust plutôt que via la chaîne
+`metal` d'Xcode.
 
 ```sh
 git clone https://github.com/kawazoeh/Spellcode spellcode
@@ -75,91 +76,67 @@ cd spellcode
 cargo build --release
 ```
 
-Sur macOS, le binaire est `target/release/spellcode-app` ; pour obtenir un vrai
-bundle d'application puis une image disque :
+Pour obtenir un vrai bundle macOS (scellé et signé en ad-hoc, pour que le Finder
+ne le déclare pas endommagé), puis une image disque :
 
 ```sh
-scripts/bundle.sh   # target/Spellcode.app, scellé et signé en ad-hoc
-scripts/dmg.sh      # Spellcode.dmg autour de ce bundle
+scripts/bundle.sh   # target/Spellcode.app
+scripts/dmg.sh      # Spellcode.dmg
 ```
 
-`scripts/bundle.sh` accepte un chemin d'icône en option et utilise par défaut
-`assets/spellcode01.png`.
-
-Sur Windows, retirez la fonctionnalité de rendu propre à macOS et compilez le
-workspace :
+Sous Windows, retirez le moteur de rendu propre à macOS et compilez le workspace.
+GPUI compile ses shaders HLSL avec `fxc.exe` au moment du build : un SDK Windows
+doit donc être installé et détectable ; [docs/windows.md](docs/windows.md) couvre
+le reste.
 
 ```sh
 cargo build --release --no-default-features
 ```
 
-GPUI compile ses shaders HLSL avec `fxc.exe` au moment du build, donc le SDK
-Windows doit être installé et détectable ; [docs/windows.md](docs/windows.md)
-liste les exigences exactes. Le binaire est `target/release/spellcode-app.exe`.
-
-Lancez la suite de tests avec :
+Le binaire se trouve dans `target/release/spellcode-app` (`spellcode-app.exe`
+sous Windows). Lancez les tests avec :
 
 ```sh
 cargo test --workspace
 ```
 
-## Exigences de compilation
-
-- **Rust 1.85 ou plus récent.** Le workspace utilise l'édition 2024.
-- **macOS 11.0 ou plus récent.** La fenêtre dessine les boutons natifs
-  au-dessus d'une surface translucide et floutée, et le bundle d'application
-  déclare `LSMinimumSystemVersion` 11.0.
-- **Aucune installation complète de Xcode n'est requise** pour le build macOS.
-  Le moteur de rendu macOS par défaut de GPUI compile ses shaders avec la chaîne
-  d'outils `metal` de Xcode, absente des Command Line Tools ; la fonctionnalité
-  `macos-blade` activée par défaut utilise à la place le backend Blade, qui
-  valide ses shaders WGSL à travers Rust. `scripts/bundle.sh` utilise `sips` et
-  `iconutil`, tous deux fournis avec macOS, pour construire le `.icns`.
-- **Windows** nécessite la chaîne d'outils MSVC et un SDK Windows fournissant
-  `fxc.exe`. Compilez avec `--no-default-features`, car `macos-blade` est un
-  moteur de rendu propre à macOS. Voir [docs/windows.md](docs/windows.md) pour
-  les détails.
-- **Linux** est compilé et testé en intégration continue avec
-  `--no-default-features` (backends X11 et Wayland de GPUI), mais aucun binaire
-  Linux n'est publié.
-
 ## Raccourcis clavier
 
-| Raccourci               | Action                                            |
-| ----------------------- | ------------------------------------------------- |
-| `+` (clic)              | Nouvel onglet shell                               |
-| `+` (clic droit)        | Menu : un shell simple, puis les entrées configurées |
-| onglet (clic gauche)    | Activer cet onglet                                |
-| onglet (clic droit)     | Renommer, icône, fond, réinitialiser, fermer      |
-| `cmd+t`                 | Nouvel onglet shell                               |
-| `cmd+w`                 | Fermer l'onglet courant                           |
-| `cmd+n` / `cmd+p`       | Onglet suivant / précédent                        |
-| `cmd+=` / `cmd+-`       | Taille de police                                  |
-| `cmd+0`                 | Réinitialiser la taille de police                 |
-| `cmd+v`                 | Coller (avec bracketed paste si le programme le demande) |
-| `cmd+k` (dans le terminal) | Effacer l'écran (envoie `Ctrl+L`)             |
+| Raccourci                  | Action                                              |
+| -------------------------- | --------------------------------------------------- |
+| `+` (clic)                 | Nouvel onglet shell                                 |
+| `+` (clic droit)           | Menu : un shell simple, puis les entrées configurées |
+| onglet (clic gauche)       | Activer cet onglet                                  |
+| onglet (clic droit)        | Renommer, icône, fond, réinitialiser, fermer        |
+| `cmd+t`                    | Nouvel onglet shell                                 |
+| `cmd+w`                    | Fermer l'onglet courant                             |
+| `cmd+n` / `cmd+p`          | Onglet suivant / précédent                          |
+| `cmd+=` / `cmd+-`          | Taille de police                                    |
+| `cmd+0`                    | Réinitialiser la taille de police                   |
+| `cmd+v`                    | Coller (avec bracketed paste si le programme le demande) |
+| `cmd+k` (dans le terminal) | Effacer l'écran (envoie `Ctrl+L`)                   |
 | `cmd+l` (dans le terminal) | Effacer jusqu'à la fin de la ligne (envoie `Ctrl+K`) |
-| `cmd+r` (dans le terminal) | Remonter en haut de l'historique              |
-| `cmd+end` ou `cmd+down` | Descendre en bas                                  |
-| molette de la souris    | Parcourir l'historique                            |
+| `cmd+r` (dans le terminal) | Remonter en haut de l'historique                    |
+| `cmd+end` ou `cmd+down`    | Descendre en bas                                    |
+| molette de la souris       | Parcourir l'historique                              |
 
-Quand une session s'est terminée, `Entrée` ou `r` la relance. Les menus du clic
-droit sont les équivalents souris de `cmd+w` : rien ici n'oblige à mémoriser un
-raccourci. La liste ci-dessus est celle de macOS.
+`Entrée` ou `r` relance une session terminée. Les menus du clic droit reprennent
+`cmd+w`, donc rien ne vous oblige à mémoriser un raccourci. La liste ci-dessus est
+celle de macOS.
 
 ## Configuration
 
-`~/.config/spellcode/config.toml` est créé au premier lancement. Il est
-facultatif, et c'est l'unique source de vérité : le clic droit sur `+` liste
-exactement les entrées qui y sont déclarées, à côté d'un shell simple.
+Tout se passe dans `~/.config/spellcode/config.toml`, créé au premier lancement
+et entièrement facultatif. C'est aussi le seul endroit où le menu de nouvel
+onglet regarde : un clic droit sur `+` donne un shell simple et exactement les
+entrées que vous y avez déclarées, rien de plus.
 
 ```toml
 [general]
 # Le shell lancé par l'entrée « Shell ». Vide signifie $SHELL, puis /bin/zsh.
 shell = ""
-# Vide signifie « essayer la liste intégrée ci-dessous ». Une famille non
-# installée est ignorée plutôt que de basculer silencieusement vers une police
-# proportionnelle.
+# Vide signifie « essayer la liste ci-dessous ». Une famille non installée est
+# ignorée plutôt que de basculer silencieusement vers une police proportionnelle.
 font_family = ""
 font_size = 13
 line_height = 1.4
@@ -169,9 +146,8 @@ scrollback = 10000
 window_tint = 0.45
 # Opacité du fond du terminal. Plus bas laisse davantage passer le flou.
 terminal_opacity = 0.42
-# Marge régulière entre le bord de la zone du terminal et la grille. Elle
-# absorbe aussi le reste de sous-cellule, pour que le texte ne touche jamais
-# le bord.
+# Marge régulière entre le bord de la zone du terminal et la grille. Elle absorbe
+# aussi le reste de sous-cellule, pour que le texte ne touche jamais le bord.
 padding = 14
 
 [[apps]]
@@ -181,32 +157,17 @@ args = []
 cwd = "~/src/my-repo"           # optionnel, vaut le dossier courant par défaut
 ```
 
-Quand `font_family` est vide, la première famille installée parmi `JetBrains
+Si `font_family` reste vide, la première famille installée parmi `JetBrains
 Mono`, `SF Mono`, `Menlo`, `Monaco`, `Cascadia Code`, `Fira Code` et
-`monospace` est utilisée. Une famille nommée dans la configuration mais non
-installée est ignorée plutôt que de basculer silencieusement vers une police
-proportionnelle.
+`monospace` l'emporte. Un nom absent est ignoré, jamais remplacé en douce par
+une police proportionnelle. Les entrées dont l'exécutable n'est pas dans le
+`PATH` s'affichent en grisé comme *non installé* plutôt que d'être masquées, pour
+qu'un fichier de configuration puisse voyager d'une machine à l'autre. Supprimez
+tous les blocs `[[apps]]` et vous n'aurez jamais qu'un shell.
 
-Les entrées dont l'exécutable est absent de `PATH` sont marquées *non installé*
-dans le menu au lieu d'être masquées, ce qui permet de garder une liste qui
-voyage entre plusieurs machines. Supprimez tous les blocs `[[apps]]` pour n'avoir
-jamais qu'un shell.
+## Sous le capot
 
-## Apparence
-
-- La fenêtre est translucide et une unique couche noire la recouvre entièrement,
-  si bien que le flou se lit comme une seule surface derrière la barre d'onglets
-  et les marges. La carte du terminal est totalement opaque par-dessus, pour que
-  le texte reste lisible.
-- Le chrome est strictement en niveaux de gris. Le terminal garde une vraie
-  palette de 256 couleurs, car les programmes plein écran en dépendent.
-- Les onglets portent une icône Font Awesome à gauche et une couleur de fond,
-  toutes deux choisies dans le menu du clic droit. `Reset` les rétablit.
-- Le point sur un onglet indique son état : vif quand la session tourne, atténué
-  quand la vue est remontée dans l'historique, pâle une fois la session
-  terminée.
-
-## Structure
+### Structure
 
 ```
 crates/
@@ -224,41 +185,36 @@ crates/
     config.rs       chargement de config.toml
 ```
 
-## Comment le terminal reste rapide
+### Pourquoi c'est rapide
 
-- **Ne jamais redessiner quand rien ne s'est passé.** Un panneau n'est notifié
-  que lorsque le PTY a produit de la sortie ou que le curseur a clignoté : un
-  terminal au repos ne coûte rien. Un repaint complet de la zone visible coûte
-  alors à peu près ce que coûterait un curseur qui clignote.
-- **Un seul appel de mise en forme par plage de style.** Les cellules adjacentes
-  qui partagent premier plan, arrière-plan et graisse deviennent une seule
-  chaîne : une grille de 200x50 forme donc quelques centaines de lignes mises en
-  forme, pas dix mille glyphes. GPUI met les dispositions en cache, si bien
-  qu'un repaint de texte inchangé est presque gratuit.
-- **La sortie est vidée par lots.** Un thread de lecture remplit des blocs de
-  64 Kio dans un canal ; l'interface interroge toutes les 8 ms et transmet d'un
-  coup tout ce qu'elle trouve à l'émulateur, si bien qu'un programme qui
-  inonde le PTY coûte une image, pas une image par écriture.
-- **Vraies 256 couleurs, 24 bits.** Les cellules nommées, indexées et en couleur
-  directe passent toutes par la palette xterm complète, et les requêtes de
-  couleur OSC reçoivent une réponse pour que les shells et les invites détectent
-  le vrai arrière-plan. Le chrome reste strictement noir et blanc, le terminal
-  garde ses couleurs.
+Un panneau n'est notifié que lorsque le PTY a produit de la sortie ou que le
+curseur a clignoté : un terminal au repos ne fait donc rien, et un repaint complet
+coûte à peu près ce qu'un curseur clignotant coûterait. Les cellules voisines qui
+partagent premier plan, arrière-plan et graisse sont façonnées d'un seul tenant,
+donc une grille de 200×50 donne quelques centaines de lignes au lieu de dix mille
+glyphes, et GPUI met les dispositions en cache. La sortie est vidée par lots : un
+thread de lecture remplit des blocs de 64 Kio, l'interface les récupère toutes
+les 8 ms, et un programme qui inonde le PTY coûte une image au lieu d'une par
+écriture.
+
+Côté couleur, les cellules nommées, indexées et en couleur directe passent toutes
+par la palette xterm complète, et les requêtes OSC reçoivent une réponse pour que
+les shells et les invites détectent le vrai arrière-plan. Le chrome reste
+strictement noir et blanc, le terminal garde ses couleurs.
 
 ## Contribuer
 
-Les issues et les pull requests sont bienvenues. Avant d'ouvrir une pull
-request, lancez `cargo build --release` et `cargo test --workspace`, et gardez
-des changements concentrés sur un seul point. Il n'y a pas de guide de
-contribution au-delà de cela ; posez la question dans l'issue si quelque chose
-n'est pas clair.
+Les issues et les pull requests sont bienvenues. Lancez `cargo build --release`
+et `cargo test --workspace` avant d'ouvrir une PR, et gardez chaque changement
+concentré sur un seul point. Pas de guide de contribution au-delà de ça ;
+demandez dans l'issue si quelque chose n'est pas clair.
 
 ## Sécurité
 
-Merci de signaler un problème de sécurité en privé via les
+Un problème de sécurité ? Signalez-le en privé via les
 [avis de sécurité](https://github.com/kawazoeh/Spellcode/security/advisories/new)
-de ce dépôt, plutôt que dans une issue publique, afin qu'un correctif puisse
-être préparé avant que le rapport ne soit visible.
+du dépôt plutôt que dans une issue publique, pour qu'un correctif puisse arriver
+avant que le rapport ne soit visible.
 
 ## Licence
 

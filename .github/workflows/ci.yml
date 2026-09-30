@@ -40,6 +40,11 @@ jobs:
           # (wayland + x11) in place, which are the Linux renderers.
           - os: ubuntu-latest
             features: "--no-default-features"
+          # Windows must be compiled and tested like the others: the macOS-only
+          # `macos-blade` feature is dropped for the same reason as on Linux,
+          # and gpui's DirectX 11 backend is used instead.
+          - os: windows-latest
+            features: "--no-default-features"
     steps:
       - uses: actions/checkout@v6
 
@@ -62,6 +67,23 @@ jobs:
           components: clippy
 
       - uses: Swatinem/rust-cache@v2
+
+      # gpui compiles its HLSL shaders with fxc.exe in release builds. The
+      # windows-latest image ships the Windows SDK, but the version directory
+      # moves; locate the newest fxc.exe and point gpui at it. Same step as in
+      # release.yml, so the two workflows agree on the environment.
+      - name: Locate fxc.exe and export GPUI_FXC_PATH
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $fxc = Get-ChildItem -Path 'C:\Program Files (x86)\Windows Kits\10\bin\*\x64\fxc.exe' `
+                   -ErrorAction SilentlyContinue |
+                 Sort-Object FullName -Descending | Select-Object -First 1
+          if (-not $fxc) {
+            throw 'fxc.exe not found: the Windows SDK (10.0.26100) is required to build gpui.'
+          }
+          "GPUI_FXC_PATH=$($fxc.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          Write-Host "GPUI_FXC_PATH=$($fxc.FullName)"
 
       - name: clippy
         run: cargo clippy --workspace --all-targets ${{ matrix.features }} -- -D warnings
